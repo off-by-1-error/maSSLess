@@ -87,6 +87,20 @@ def mix(a):
     print(a)
 
 
+def mixColumns(state):
+    print(state)
+    
+    for i in range(0, 4):
+        col = [state[0][i], state[1][i], state[2][i], state[3][i]]
+        mix(col)
+        state[0][i] = col[0]
+        state[1][i] = col[1]
+        state[2][i] = col[2]
+        state[3][i] = col[3]
+
+    print(state)
+
+
 def aes(state, key):
     return 0
 
@@ -139,6 +153,11 @@ def get_bytes(filename):
 #
 #
 #shiftRows(state)
+
+mixColumns([[219, 242, 1, 212],
+           [19, 10, 1, 212],
+           [83, 34, 1, 212],
+           [69, 92, 1, 213]])
 
 
 
