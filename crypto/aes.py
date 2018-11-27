@@ -66,7 +66,25 @@ def shiftRows(state):
             shift(state[i])
 
     print(state)
-    
+ 
+
+
+# learned from http://cs.ucsb.edu/~koc/cs178/projects/JT/aes.c
+xtime = lambda a: (((a << 1) ^ 0x1B) & 0xFF) if (a & 0x80) else (a << 1)
+
+
+def mix(a):
+    # see Sec 4.1.2 in The Design of Rijndael
+    print(a)
+
+    t = a[0] ^ a[1] ^ a[2] ^ a[3]
+    u = a[0]
+    a[0] ^= t ^ xtime(a[0] ^ a[1])
+    a[1] ^= t ^ xtime(a[1] ^ a[2])
+    a[2] ^= t ^ xtime(a[2] ^ a[3])
+    a[3] ^= t ^ xtime(a[3] ^ u)
+
+    print(a)
 
 
 def aes(state, key):
@@ -114,13 +132,15 @@ def get_bytes(filename):
 
 
 #get_bytes("message.txt")
-state = [[1, 2, 3, 4],
-         [1, 2, 3, 4],
-         [1, 2, 3, 4],
-         [1, 2, 3, 4]]
+#state = [[1, 2, 3, 4],
+#         [1, 2, 3, 4],
+#         [1, 2, 3, 4],
+#         [1, 2, 3, 4]]
+#
+#
+#shiftRows(state)
 
 
-shiftRows(state)
 
 
 
