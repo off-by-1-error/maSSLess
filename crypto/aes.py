@@ -1,4 +1,4 @@
-#ayy lmao
+import sys
 
 sbox = [[0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76],
         [0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0],
@@ -37,28 +37,111 @@ sbox_inv = [[0x52, 0x09, 0x6A, 0xD5, 0x30, 0x36, 0xA5, 0x38, 0xBF, 0x40, 0xA3, 0
 
 
 
-
+#assumes 0 <= n <= 255
 def subBytes(n):
     return sbox[(n & 0xf0) >> 4][n & 0x0f]
 
-
+#assumes 0 <= n <= 255
 def invSubBytes(n):
     return sbox_inv[(n & 0xf0) >> 4][n & 0x0f]
 
-#def subBytes(n):
-#    if n < 0 or n > 255:
-#        print("fake!!!")
-#        return -1
-#
-#    high_nibble = n & 0xf0
-#    high_nibble = high_nibble >> 4
-#
-#    low_nibble = n & 0x0f
-#
-#    return sbox[high_nibble][low_nibble]
+
+def shift(row):
+    #print(row)
+    
+    temp = row[0]
+    for i in range(0, len(row) - 1):
+        row[i] = row[i+1]
+
+    row[len(row)-1] = temp
+
+    #print(row)
+        
+
+def shiftRows(state):
+    print(state)
+
+    for i in range(0, len(state)):
+        for j in range(0, i):
+            shift(state[i])
+
+    print(state)
+ 
 
 
+# learned from http://cs.ucsb.edu/~koc/cs178/projects/JT/aes.c
+xtime = lambda a: (((a << 1) ^ 0x1B) & 0xFF) if (a & 0x80) else (a << 1)
+
+
+def mix(a):
+    # see Sec 4.1.2 in The Design of Rijndael
+    print(a)
+
+    t = a[0] ^ a[1] ^ a[2] ^ a[3]
+    u = a[0]
+    a[0] ^= t ^ xtime(a[0] ^ a[1])
+    a[1] ^= t ^ xtime(a[1] ^ a[2])
+    a[2] ^= t ^ xtime(a[2] ^ a[3])
+    a[3] ^= t ^ xtime(a[3] ^ u)
+
+    print(a)
+
+
+def aes(state, key):
+    return 0
+
+
+
+def make_state(b):
+    print(b)
+
+
+    if len(b) == 16:
+        state = [[b[0], b[4], b[8], b[12]],
+                 [b[1], b[5], b[9], b[13]],
+                 [b[2], b[6], b[10], b[14]],
+                 [b[3], b[7], b[11], b[15]]]
+
+    else:
+        state = [[0, 0, 0, 0],
+                 [0, 0, 0, 0],
+                 [0, 0, 0, 0],
+                 [0, 0, 0, 0]]
+
+        for i in range(0, 15):
+            try:
+                state[i//4][i%4] = b[(i*4)%15]
+            except:
+                pass
+
+    print (state)
+
+def get_bytes(filename):
+    f = open(filename, "rb")
+
+    try:
+        bytes_read = f.read(16)
+        while bytes_read:
+            make_state(bytes_read)
+            bytes_read = f.read(16)
+    finally:
+        f.close()
 
 
 #---------------------------------------------------------
+
+
+#get_bytes("message.txt")
+#state = [[1, 2, 3, 4],
+#         [1, 2, 3, 4],
+#         [1, 2, 3, 4],
+#         [1, 2, 3, 4]]
+#
+#
+#shiftRows(state)
+
+
+
+
+
 
