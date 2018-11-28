@@ -1,7 +1,7 @@
 from enum import Enum
 from util import *
 from crypto import aes, rsa
-import asn1
+import asn1, base64
 
 DEF_VERSION = (3,3)
 
@@ -59,6 +59,31 @@ class SSLState():
         while len(ret) < n:
             ret += self.sock.recv(n-len(ret))
         return ret
+
+    def readServerPrivkey(self, fname):
+        raw = open(fname, "rb").read()
+        raw = b"\n".join(l for l in raw.split(b'\n') if b"-----" not in l)
+        raw = base64.b64decode(raw)
+        decoder = asn1.Decoder()
+        decoder.start(raw)
+        decoder.enter()
+        decoder.read()
+        decoder.read()
+        tag, val = decoder.read()
+        decoder.start(val)
+        decoder.enter()
+        decoder.read()
+        tag, n = decoder.read()
+        tag, e = decoder.read()
+        decoder.read()
+        tag, p = decoder.read()
+        tag, q = decoder.read()
+        if p*q != n:
+            raise Exception("rsa private key factors incorrect")
+        phi = (p-1)*(q-1)
+        d = modinv(e, phi)
+        self.serv_rsa_privkey = (d, n)
+        self.serv_rsa_pubkey = (n, e)
 
     def getRandom(self):
         return p32(getTimestamp())+getRandomBytes(28)
@@ -199,7 +224,7 @@ class SSLState():
         decoder.enter()
         tag, n = decoder.read()
         tag, e = decoder.read()
-        self.serv_rsa_key = (n,e)
+        self.serv_rsa_pubkey = (n,e)
 
     def recvServerHandshake(self):
         while not self.serv_done:
@@ -230,9 +255,14 @@ class SSLState():
 
     def sendClientKeyExchange(self):
         self.premaster = p8(*self.version)+getRandomBytes(46)
-        enc = rsa.rsa_pkcs1_v15_encrypt(self.premaster, self.serv_rsa_key)
+        enc = rsa.rsa_pkcs1_v15_encrypt(self.premaster, self.serv_rsa_pubkey)
         pl = p16(len(enc))+enc
         self.sendHandshake(HandshakeType.CLIENT_KEY_EXCHANGE, pl)
+    
+    def parseClientKeyExchange(self, data):
+        enclen = u16(data[:2])
+        enc = data[2:2+enclen]
+        dec = rsa.rsa_pkcs1_v15_decrypt(enc, self.serv_rsa_privkey)
 
     def sendFinished(self):
         #TODO
