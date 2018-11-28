@@ -1,5 +1,6 @@
 from enum import Enum
 from util import *
+from crypto import aes, rsa
 import asn1
 
 DEF_VERSION = (3,3)
@@ -28,8 +29,8 @@ class CompressionType(Enum):
     NULL = 0
 
 class CipherSuite(Enum):
+    TLS_RSA_WITH_AES_128_CBC_SHA = 0x2f
     #TLS_DH_anon_WITH_AES_128_CBC_SHA = 0x34
-    TLS_RSA_WITH_AES_128_CBC_SHA = 0x35
 
 class KeyExchangeAlgo(Enum):
     RSA = 0
@@ -49,10 +50,11 @@ class SSLState():
         self.end = end
         self.serv_done = False
         self.handshake_messages = b""
+        self.prf = self.tls_prf_sha256
 
-    def send(self, pl):
+    def send_raw(self, pl):
         self.sock.sendall(pl)
-    def recv(self, n):
+    def recv_raw(self, n):
         ret = b""
         while len(ret) < n:
             ret += self.sock.recv(n-len(ret))
@@ -60,6 +62,33 @@ class SSLState():
 
     def getRandom(self):
         return p32(getTimestamp())+getRandomBytes(28)
+
+    def hmac_sha256(self, k, data):
+        from hashlib import sha256, sha1 #TODO implement sha...
+        k += b"\0"*(64-len(k))
+        data = sha1(xor(k,b"\x36"*64)+data).digest()
+        data = sha1(xor(k,b"\x5c"*64)+data).digest()
+        return data
+    def tls_prf_sha256(self, secret, label, seed, nbytes):
+        seed = label + seed
+        aa = seed
+        out = b""
+        while len(out) < nbytes:
+            aa = self.hmac_sha256(secret, aa)
+            out += self.hmac_sha256(secret, aa+seed)
+        return out[:nbytes]
+
+    def encryptRecord(self, data):
+        from hashlib import sha1 #TODO implement sha...
+        pl = self.cli_iv
+        pl += data
+        pl += sha1(data).digest()
+        plen = 16 - (len(pl) % 16)
+        pl += p8(plen-1)*plen
+        from Crypto.Cipher import AES
+        aes = AES.new(self.m_key, AES.MODE_CBC, self.m_iv)
+        enc = aes.encrypt(pl)
+        return enc
 
     def getCipherSuites(self):
         return (c.value for c in CipherSuite)
@@ -74,7 +103,10 @@ class SSLState():
         pl: message payload as raw bytes
         version: tuple of tls version
         '''
-        self.send(p8(typ.value, self.version[0], self.version[1])+p16(len(pl))+pl)
+        self.send_raw(p8(typ.value, self.version[0], self.version[1])+p16(len(pl))+pl)
+
+    def buildRawHandshake(self, typ, pl):
+        return p8(typ.value)+p24(len(pl))+pl
 
     def sendHandshake(self, *args):
         '''
@@ -85,7 +117,7 @@ class SSLState():
           i.e. ((typ0,pl0),(typ1,pl1))
         '''
         msgs = (args,) if len(args) == 2 else args
-        pl = b"".join(p8(m[0].value)+p24(len(m[1]))+m[1] for m in msgs)
+        pl = b"".join(self.buildRawHandshake(m[0], m[1]) for m in msgs)
         self.handshake_messages += pl # assuming no HelloRequests are in here
         self.sendTlsRecord(RecordType.HANDSHAKE, pl)
 
@@ -120,8 +152,25 @@ class SSLState():
         self.sendHandshake(HandshakeType.SERVER_HELLO, pl)
 
     def sendChangeCipherSpec(self):
-        #self.master = self.prf(self.premaster, b"master secret", self.client_random+self.server_random)[:48]
+        rands = self.client_random + self.server_random
+        self.master = self.prf(self.premaster, b"master secret", rands, 48)
         del self.premaster
+        # right now, only support TLS_RSA_WITH_AES_128_CBC_SHA
+        # so mac keys are 20 bytes, keys/ivs 16 bytes
+        kdata = self.prf(self.master, b"key expansion", rands, 20*2+16*2+16*2)
+        i = 0
+        self.cli_mac_key = kdata[i:i+20] ; i += 20
+        self.serv_mac_key = kdata[i:i+20] ; i += 20
+        self.cli_key = kdata[i:i+16] ; i += 16
+        self.serv_key = kdata[i:i+16] ; i += 16
+        self.cli_iv = kdata[i:i+16] ; i += 16
+        self.serv_iv = kdata[i:i+16] ; i += 16
+        if self.end == "client":
+            self.m_key = self.cli_key
+            self.m_iv = self.cli_iv
+        else:
+            self.m_key = self.serv_key
+            self.m_iv = self.serv_iv
         self.sendTlsRecord(RecordType.CHANGE_CIPHER_SPEC, b"\x01")
 
     def parseServerHello(self, data):
@@ -154,16 +203,18 @@ class SSLState():
 
     def recvServerHandshake(self):
         while not self.serv_done:
-            typ = u8(self.recv(1))
+            typ = u8(self.recv_raw(1))
             if typ != RecordType.HANDSHAKE.value:
                 raise Exception("expected Handshake message got %s"%RecordType(typ))
-            version = self.recv(2) # need to check this?
-            data_len = u16(self.recv(2))
+            version = self.recv_raw(2) # need to check this?
+            data_len = u16(self.recv_raw(2))
             while data_len > 0:
-                op = HandshakeType(u8(self.recv(1)))
-                op_len = u24(self.recv(3))
-                data = self.recv(op_len)
+                op = HandshakeType(u8(self.recv_raw(1)))
+                op_len = u24(self.recv_raw(3))
+                data = self.recv_raw(op_len)
                 data_len -= 4+op_len
+                if op != HandshakeType.HELLO_REQ:
+                    self.handshake_messages += p8(op.value)+p24(op_len)+data
                 if op == HandshakeType.SERV_HELLO:
                     self.parseServerHello(data)
                 elif op == HandshakeType.CERT:
@@ -179,9 +230,7 @@ class SSLState():
 
     def sendClientKeyExchange(self):
         self.premaster = p8(*self.version)+getRandomBytes(46)
-        # TODO: i have no idea what the padding scheme is if any o.0
-        n, e = self.serv_rsa_key
-        enc = long_to_bytes(pow(bytes_to_long(self.premaster), e, n))
+        enc = rsa.rsa_pkcs1_v15_encrypt(self.premaster, self.serv_rsa_key)
         pl = p16(len(enc))+enc
         self.sendHandshake(HandshakeType.CLIENT_KEY_EXCHANGE, pl)
 
@@ -189,4 +238,9 @@ class SSLState():
         #TODO
         # need to send prf(master, "client/server finished", H(handshake_messages))
         # ... need sha256 for prf
-        pass
+        from hashlib import sha256, sha1 #TODO implement sha
+        lbl = b"client finished" if self.end == "client" else b"server finished"
+        verify = self.prf(self.master, lbl, sha1(self.handshake_messages).digest(), 12)
+        content = self.buildRawHandshake(HandshakeType.FIN, verify)
+        pl = self.encryptRecord(content)
+        self.sendTlsRecord(RecordType.HANDSHAKE, pl)

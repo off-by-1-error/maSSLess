@@ -1,8 +1,8 @@
 import sys, socket
 from massless import *
 
-host = "google.com"
-port = 443
+host = "0"
+port = 4433
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.connect((host, port))
@@ -12,5 +12,6 @@ state.sendClientHello()
 state.recvServerHandshake()
 state.sendClientKeyExchange()
 state.sendChangeCipherSpec()
+state.sendFinished()
 
 time.sleep(5)

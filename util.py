@@ -30,3 +30,8 @@ def getTimestamp():
 
 def getRandomBytes(n):
     return secrets.token_bytes(n)
+
+def xor(a, b):
+    if len(a) != len(b):
+        raise Exception("trying to xor different length strings")
+    return b"".join(bytes(a[i]^b[i]) for i in range(len(a)))
