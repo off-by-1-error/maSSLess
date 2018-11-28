@@ -34,9 +34,9 @@ def getRandomBytes(n):
 def xor(a, b):
     if len(a) != len(b):
         raise Exception("trying to xor different length strings")
-    return b"".join(bytes(a[i]^b[i]) for i in range(len(a)))
+    return b"".join(bytes([a[i]^b[i]]) for i in range(len(a)))
 
-# credit to https://stackoverflow.com/questions/4798654/modular-multiplicative-inverse-function-in-python
+# credit for modinv goes to stackoverflow
 def egcd(a, b):
     if a == 0:
         return (b, 0, 1)
@@ -49,3 +49,19 @@ def modinv(a, m):
         raise Exception('modular inverse does not exist')
     else:
         return x % m
+
+def computeHmac(k, m, blocksize, h):
+    if len(k) > blocksize:
+        k = h(k)
+    k += b"\0"*(blocksize-len(k))
+    inner = xor(k, b"\x36"*blocksize)+m
+    inner = h(inner)
+    outer = xor(k, b"\x5c"*blocksize)+inner
+    outer = h(outer)
+    return outer
+
+def compute_sha256(m):
+    import hashlib #TODO: sha256
+    return hashlib.sha256(m).digest()
+def hmac_sha256(k, m):
+    return computeHmac(k, m, 64, compute_sha256)

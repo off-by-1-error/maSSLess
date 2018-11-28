@@ -49,6 +49,7 @@ class SSLState():
             raise Exception("connection end must be either \"server\" or \"client\"")
         self.end = end
         self.serv_done = False
+        self.client_done = False
         self.handshake_messages = b""
         self.prf = self.tls_prf_sha256
 
@@ -59,6 +60,10 @@ class SSLState():
         while len(ret) < n:
             ret += self.sock.recv(n-len(ret))
         return ret
+
+    def computeMasterSecret(self):
+        rands = self.client_random + self.server_random
+        self.master = self.prf(self.premaster, b"master secret", rands, 48)
 
     def readServerPrivkey(self, fname):
         raw = open(fname, "rb").read()
@@ -84,23 +89,22 @@ class SSLState():
         d = modinv(e, phi)
         self.serv_rsa_privkey = (d, n)
         self.serv_rsa_pubkey = (n, e)
+    def readServerCert(self, fname):
+        raw = open(fname, "rb").read()
+        raw = b"\n".join(l for l in raw.split(b'\n') if b"-----" not in l)
+        raw = base64.b64decode(raw)
+        self.serv_cert = raw
 
     def getRandom(self):
         return p32(getTimestamp())+getRandomBytes(28)
 
-    def hmac_sha256(self, k, data):
-        from hashlib import sha256, sha1 #TODO implement sha...
-        k += b"\0"*(64-len(k))
-        data = sha1(xor(k,b"\x36"*64)+data).digest()
-        data = sha1(xor(k,b"\x5c"*64)+data).digest()
-        return data
     def tls_prf_sha256(self, secret, label, seed, nbytes):
         seed = label + seed
         aa = seed
         out = b""
         while len(out) < nbytes:
-            aa = self.hmac_sha256(secret, aa)
-            out += self.hmac_sha256(secret, aa+seed)
+            aa = hmac_sha256(secret, aa)
+            out += hmac_sha256(secret, aa+seed)
         return out[:nbytes]
 
     def encryptRecord(self, data):
@@ -171,15 +175,14 @@ class SSLState():
         '''
         self.server_random = self.getRandom()
         pl = p8(*self.version)
+        pl += self.server_random
         pl += p8(0) # session id length
         pl += p16(self.cipher_suite.value)
         pl += p8(CompressionType.NULL.value) # compression method null
-        self.sendHandshake(HandshakeType.SERVER_HELLO, pl)
+        self.sendHandshake(HandshakeType.SERV_HELLO, pl)
 
     def sendChangeCipherSpec(self):
-        rands = self.client_random + self.server_random
-        self.master = self.prf(self.premaster, b"master secret", rands, 48)
-        del self.premaster
+        self.computeMasterSecret()
         # right now, only support TLS_RSA_WITH_AES_128_CBC_SHA
         # so mac keys are 20 bytes, keys/ivs 16 bytes
         kdata = self.prf(self.master, b"key expansion", rands, 20*2+16*2+16*2)
@@ -258,20 +261,18 @@ class SSLState():
         version = data[i:i+2] ; i += 2
         self.client_random = data[i:i+32] ; i += 32
         #TODO should parse the rest of the message
-
-    def clientKeyExchange(self, data):
-        #TODO write
-
+        self.cipher_suite = CipherSuite.TLS_RSA_WITH_AES_128_CBC_SHA
 
     def recvClientHandshake(self):
         while not self.client_done:
             typ = u8(self.recv_raw(1))
-            if typ == RecordType.CHANGE_CIPHER_SPEC:
+            if typ == RecordType.CHANGE_CIPHER_SPEC.value:
                 self.client_done = True
                 version = self.recv_raw(2) # need to check this?
                 data_len = u16(self.recv_raw(2))
-                self.recv(data_len)
-                break;
+                self.recv_raw(data_len)
+                self.computeMasterSecret()
+                break
             elif typ != RecordType.HANDSHAKE.value:
                 raise Exception("expected Handshake message got %s"%RecordType(typ))
             version = self.recv_raw(2) # need to check this?
@@ -286,10 +287,20 @@ class SSLState():
                 if op == HandshakeType.CLIENT_HELLO:
                     self.parseClientHello(data)
                     self.sendServerHello()
-                    #TODO add the sends
+                    self.sendServerCert()
+                    self.sendServerDone()
                 elif op == HandshakeType.CLIENT_KEY_EXCHANGE:
                     #put parse leu exchange here
-                    self.clientKeyExchange(data)
+                    self.parseClientKeyExchange(data)
+
+    def sendServerCert(self):
+        pl = self.serv_cert
+        pl = p24(len(pl))+pl
+        pl = p24(len(pl))+pl
+        self.sendHandshake(HandshakeType.CERT, pl)
+
+    def sendServerDone(self):
+        self.sendHandshake(HandshakeType.SERV_HELLO_DONE, b"")
 
     def sendClientKeyExchange(self):
         self.premaster = p8(*self.version)+getRandomBytes(46)
@@ -300,7 +311,7 @@ class SSLState():
     def parseClientKeyExchange(self, data):
         enclen = u16(data[:2])
         enc = data[2:2+enclen]
-        dec = rsa.rsa_pkcs1_v15_decrypt(enc, self.serv_rsa_privkey)
+        self.premaster = rsa.rsa_pkcs1_v15_decrypt(enc, self.serv_rsa_privkey)
 
     def sendFinished(self):
         #TODO
