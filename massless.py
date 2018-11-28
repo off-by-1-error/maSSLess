@@ -253,6 +253,44 @@ class SSLState():
                 else:
                     raise Exception("unexpected message receiving server handshake: %s"%op)
 
+    def parseClientHello(self, data):
+        i = 0
+        version = data[i:i+2] ; i += 2
+        self.client_random = data[i:i+32] ; i += 32
+        #TODO should parse the rest of the message
+
+    def clientKeyExchange(self, data):
+        #TODO write
+
+
+    def recvClientHandshake(self):
+        while not self.client_done:
+            typ = u8(self.recv_raw(1))
+            if typ == RecordType.CHANGE_CIPHER_SPEC:
+                self.client_done = True
+                version = self.recv_raw(2) # need to check this?
+                data_len = u16(self.recv_raw(2))
+                self.recv(data_len)
+                break;
+            elif typ != RecordType.HANDSHAKE.value:
+                raise Exception("expected Handshake message got %s"%RecordType(typ))
+            version = self.recv_raw(2) # need to check this?
+            data_len = u16(self.recv_raw(2))
+            while data_len > 0:
+                op = HandshakeType(u8(self.recv_raw(1)))
+                op_len = u24(self.recv_raw(3))
+                data = self.recv_raw(op_len)
+                data_len -= 4+op_len
+                if op != HandshakeType.HELLO_REQ:
+                    self.handshake_messages += p8(op.value)+p24(op_len)+data
+                if op == HandshakeType.CLIENT_HELLO:
+                    self.parseClientHello(data)
+                    self.sendServerHello()
+                    #TODO add the sends
+                elif op == HandshakeType.CLIENT_KEY_EXCHANGE:
+                    #put parse leu exchange here
+                    self.clientKeyExchange(data)
+
     def sendClientKeyExchange(self):
         self.premaster = p8(*self.version)+getRandomBytes(46)
         enc = rsa.rsa_pkcs1_v15_encrypt(self.premaster, self.serv_rsa_pubkey)
