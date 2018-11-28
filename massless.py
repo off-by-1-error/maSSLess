@@ -65,21 +65,20 @@ class SSLState():
         rands = self.client_random + self.server_random
         self.master = self.prf(self.premaster, b"master secret", rands, 48)
     def computeSharedKeys(self):
-        rands = self.client_random + self.server_random
+        rands = self.server_random + self.client_random
         # right now, only support TLS_RSA_WITH_AES_128_CBC_SHA
         # so mac keys are 20 bytes, keys/ivs 16 bytes
-        kdata = self.prf(self.master, b"key expansion", rands, 20*2+16*2+16*2)
+        kdata = self.prf(self.master, b"key expansion", rands, 20*2+16*2)
         i = 0
         self.cli_mac_key = kdata[i:i+20] ; i += 20
         self.serv_mac_key = kdata[i:i+20] ; i += 20
         self.cli_key = kdata[i:i+16] ; i += 16
         self.serv_key = kdata[i:i+16] ; i += 16
-        self.m_key = self.cli_key
-        self.peer_key = self.serv_key
-        if self.end == "server":
-            tmp = self.peer_key
-            self.peer_key = self.m_key
-            self.m_key = tmp
+        self.m_key, self.peer_key = self.serv_key, self.cli_key
+        self.m_mac_key, self.peer_mac_key = self.serv_mac_key, self.cli_mac_key
+        if self.end == "client":
+            self.m_key, self.peer_key = self.peer_key, self.m_key
+            self.m_mac_key, self.peer_mac_key = self.peer_mac_key, self.m_mac_key
 
     def readServerPrivkey(self, fname):
         raw = open(fname, "rb").read()
