@@ -21,6 +21,10 @@ sock = serv.accept()[0]
 state.sock = sock
 
 state.recvClientHandshake()
-print("master: "+state.master.hex())
-
 state.recvFinished()
+state.sendChangeCipherSpec()
+state.sendFinished()
+
+state.send(b"ping\n")
+out = state.recv()
+print(out.decode("utf-8"))

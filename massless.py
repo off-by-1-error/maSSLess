@@ -9,7 +9,7 @@ class RecordType(Enum):
     CHANGE_CIPHER_SPEC = 0x14
     ALERT = 0x15
     HANDSHAKE = 0x16
-    APPLICATION = 0x17
+    APP = 0x17
 
 class HandshakeType(Enum):
     HELLO_REQ = 0
@@ -64,6 +64,7 @@ class SSLState():
     def computeMasterSecret(self):
         rands = self.client_random + self.server_random
         self.master = self.prf(self.premaster, b"master secret", rands, 48)
+        del self.premaster
     def computeSharedKeys(self):
         rands = self.server_random + self.client_random
         # right now, only support TLS_RSA_WITH_AES_128_CBC_SHA
@@ -122,10 +123,12 @@ class SSLState():
             out += hmac_sha256(secret, aa+seed)
         return out[:nbytes]
 
-    def encryptData(self, data):
+    def encryptData(self, typ, version, data):
         from hashlib import sha1 #TODO implement sha...
+        macced = p64(self.m_seq)+p8(typ.value)+version+p16(len(data))+data
+        self.m_seq += 1
         pl = data
-        pl += sha1(data).digest()
+        pl += hmac_sha1(self.m_mac_key, macced)
         plen = 16 - (len(pl) % 16)
         pl += p8(plen-1)*plen
         from Crypto.Cipher import AES #TODO: insert our aes
@@ -139,9 +142,21 @@ class SSLState():
         enc = enc[16:]
         from Crypto.Cipher import AES #TODO: insert our aes
         aes = AES.new(self.peer_key, AES.MODE_CBC, iv)
-        print("enc: "+enc.hex())
         msg = aes.decrypt(enc)
-        print("msg: "+msg.hex())
+        return msg
+    def verifyMsg(self, typ, version, msg):
+        # TODO: this just doesnt work.... mac not correct
+        padlen = u8(bytes([msg[-1]]))
+        if msg[-padlen-1:-1] != bytes([padlen])*padlen:
+            raise Exception("bad padding") #TODO: make sure this cant cause padding oracle attack
+        mac = msg[-padlen-1-20:-padlen-1]
+        content = msg[:-padlen-1-20]
+        macced = p64(self.peer_seq)+p8(typ.value)+version+p16(len(content))+content
+        self.peer_seq += 1
+        m_mac = hmac_sha1(self.peer_mac_key, macced)
+        if m_mac != mac:
+            raise Exception("bad mac")
+        return content
 
     def getCipherSuites(self):
         return (c.value for c in CipherSuite)
@@ -171,7 +186,8 @@ class SSLState():
         '''
         msgs = (args,) if len(args) == 2 else args
         pl = b"".join(self.buildRawHandshake(m[0], m[1]) for m in msgs)
-        self.handshake_messages += pl # assuming no HelloRequests are in here
+        no_hellos = b"".join(self.buildRawHandshake(m[0], m[1]) for m in msgs if m[0] != HandshakeType.HELLO_REQ)
+        self.handshake_messages += no_hellos
         self.sendTlsRecord(RecordType.HANDSHAKE, pl)
 
     def sendHelloReq(self):
@@ -206,9 +222,20 @@ class SSLState():
         self.sendHandshake(HandshakeType.SERV_HELLO, pl)
 
     def sendChangeCipherSpec(self):
-        self.computeMasterSecret()
-        self.computeSharedKeys()
+        if self.end == "client":
+            self.computeMasterSecret()
+            self.computeSharedKeys()
+        self.m_seq = 0
         self.sendTlsRecord(RecordType.CHANGE_CIPHER_SPEC, b"\x01")
+
+    def recvChangeCipherSpec(self):
+        typ = RecordType(u8(self.recv_raw(1)))
+        if typ != RecordType.CHANGE_CIPHER_SPEC:
+            raise Exception("expected ChangeCipherSpec got %s"%typ)
+        version = self.recv_raw(2)
+        data_len = u16(self.recv_raw(2))
+        data = self.recv_raw(data_len)
+        self.peer_seq = 0
 
     def parseServerHello(self, data):
         i = 0
@@ -282,6 +309,7 @@ class SSLState():
                 self.recv_raw(data_len)
                 self.computeMasterSecret()
                 self.computeSharedKeys()
+                self.peer_seq = 0
                 break
             elif typ != RecordType.HANDSHAKE.value:
                 raise Exception("expected Handshake message got %s"%RecordType(typ))
@@ -311,6 +339,21 @@ class SSLState():
         data_len = u16(self.recv_raw(2))
         enc = self.recv_raw(data_len)
         msg = self.decryptData(enc)
+        msg = self.verifyMsg(typ, version, msg)
+        if msg[0] != HandshakeType.FIN.value:
+            raise Exception("expected Finished message, got %s"%HandshakeType(u8(msg[0:1])))
+        if u24(msg[1:4]) != len(msg)-4:
+            raise Exception("length mismatch for Finished message")
+        peer_verify = msg[4:]
+        from hashlib import sha256 #TODO implement sha
+        lbl = b"client finished" if self.end == "server" else b"server finished"
+        verify = self.prf(self.master, lbl, sha256(self.handshake_messages).digest(), 12)
+        if verify != peer_verify:
+            raise Exception("verification of Finished message failed")
+        if self.end == "server":
+            self.handshake_messages += msg
+        else:
+            del self.handshake_messages
 
     def sendServerCert(self):
         pl = self.serv_cert
@@ -336,9 +379,27 @@ class SSLState():
         #TODO
         # need to send prf(master, "client/server finished", H(handshake_messages))
         # ... need sha256 for prf
-        from hashlib import sha256, sha1 #TODO implement sha
+        from hashlib import sha256 #TODO implement sha
         lbl = b"client finished" if self.end == "client" else b"server finished"
-        verify = self.prf(self.master, lbl, sha1(self.handshake_messages).digest(), 12)
+        verify = self.prf(self.master, lbl, sha256(self.handshake_messages).digest(), 12)
         content = self.buildRawHandshake(HandshakeType.FIN, verify)
-        pl = self.encryptData(content)
+        if self.end == "client":
+            self.handshake_messages += content
+        else:
+            del self.handshake_messages
+        pl = self.encryptData(RecordType.HANDSHAKE, p8(*self.version), content)
         self.sendTlsRecord(RecordType.HANDSHAKE, pl)
+
+    def send(self, msg):
+        pl = self.encryptData(RecordType.APP, p8(*self.version), msg)
+        self.sendTlsRecord(RecordType.APP, pl)
+    def recv(self):
+        typ = RecordType(u8(self.recv_raw(1)))
+        if typ != RecordType.APP:
+            raise Exception("expected to receive application data, got %s"%typ)
+        version = self.recv_raw(2)
+        data_len = u16(self.recv_raw(2))
+        enc = self.recv_raw(data_len)
+        msg = self.decryptData(enc)
+        msg = self.verifyMsg(typ, version, msg)
+        return msg

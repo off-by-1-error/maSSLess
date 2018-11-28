@@ -1,8 +1,8 @@
 import sys, socket
 from massless import *
 
-host = "0"
-port = 4433
+host = "google.com"
+port = 443
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.connect((host, port))
@@ -14,4 +14,10 @@ state.sendClientKeyExchange()
 state.sendChangeCipherSpec()
 state.sendFinished()
 
-time.sleep(5)
+state.recvChangeCipherSpec()
+state.recvFinished()
+
+state.send(b"GET /\n")
+while True:
+    out = state.recv()
+    sys.stdout.write(out.decode("ISO-8859-1"))

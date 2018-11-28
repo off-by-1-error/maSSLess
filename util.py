@@ -1,5 +1,9 @@
 import struct, time, secrets
 
+def p64(*args):
+    return b"".join(struct.pack("!Q", x) for x in args)
+def u64(x):
+    return struct.unpack("!Q", x)[0]
 def p32(*args):
     return b"".join(struct.pack("!I", x) for x in args)
 def u32(x):
@@ -65,3 +69,8 @@ def compute_sha256(m):
     return hashlib.sha256(m).digest()
 def hmac_sha256(k, m):
     return computeHmac(k, m, 64, compute_sha256)
+def compute_sha1(m):
+    import hashlib #TODO: sha1
+    return hashlib.sha1(m).digest()
+def hmac_sha1(k, m):
+    return computeHmac(k, m, 64, compute_sha1)
