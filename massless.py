@@ -59,6 +59,8 @@ class SSLState():
         ret = b""
         while len(ret) < n:
             ret += self.sock.recv(n-len(ret))
+            if len(ret) == 0:
+                return None
         return ret
 
     def computeMasterSecret(self):

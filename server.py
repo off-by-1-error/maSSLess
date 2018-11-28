@@ -4,6 +4,7 @@ from massless import *
 parser = argparse.ArgumentParser(description="run simple ssl server")
 parser.add_argument("--key", help="private key file in pem format", required=True)
 parser.add_argument("--cert", help="cert file in pem format", required=True)
+parser.add_argument("-p", "--port", help="port to bind to", type=int, default=4433)
 args = parser.parse_args()
 
 state = SSLState(None, "server")
@@ -11,7 +12,7 @@ state.readServerPrivkey(args.key)
 state.readServerCert(args.cert)
 
 host = "0"
-port = 4433
+port = args.port
 
 serv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 serv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -27,4 +28,4 @@ state.sendFinished()
 
 state.send(b"ping\n")
 out = state.recv()
-print(out.decode("utf-8"))
+print(out.decode("raw_unicode_escape"))

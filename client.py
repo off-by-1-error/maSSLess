@@ -1,8 +1,13 @@
-import sys, socket
+import sys, socket, argparse
 from massless import *
 
-host = "google.com"
-port = 443
+parser = argparse.ArgumentParser(description="run simple ssl client")
+parser.add_argument("host", help="server to connect to")
+parser.add_argument("port", help="port to connect to", type=int)
+args = parser.parse_args()
+
+host = args.host
+port = args.port
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.connect((host, port))
@@ -17,7 +22,11 @@ state.sendFinished()
 state.recvChangeCipherSpec()
 state.recvFinished()
 
-state.send(b"GET /\n")
+inp = sys.stdin.readline() # for google.com:443, input 'GET /'
+state.send(inp.encode("utf-8"))
 while True:
-    out = state.recv()
-    sys.stdout.write(out.decode("ISO-8859-1"))
+    try:
+        out = state.recv()
+        sys.stdout.write(out.decode("raw_unicode_escape"))
+    except TypeError: # eof
+        break
