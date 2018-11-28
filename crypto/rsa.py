@@ -10,6 +10,7 @@ def rsa_pkcs1_v15_pad(m, nbytes):
     return b"\x00\x02"+ps+b"\x00"+m
 
 def rsa_pkcs1_v15_unpad(m):
+    #TODO: handle padding oracle attacks
     return m[m.index(b'\0')+1:]
 
 def rsa_pkcs1_v15_encrypt(m, key):

@@ -18,8 +18,9 @@ serv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 serv.bind((host, port))
 serv.listen(32)
 sock = serv.accept()[0]
-
 state.sock = sock
 
 state.recvClientHandshake()
 print("master: "+state.master.hex())
+
+state.recvFinished()
