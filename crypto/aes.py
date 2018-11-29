@@ -35,11 +35,21 @@ sbox_inv = [[0x52, 0x09, 0x6A, 0xD5, 0x30, 0x36, 0xA5, 0x38, 0xBF, 0x40, 0xA3, 0
             [0xA0, 0xE0, 0x3B, 0x4D, 0xAE, 0x2A, 0xF5, 0xB0, 0xC8, 0xEB, 0xBB, 0x3C, 0x83, 0x53, 0x99, 0x61],
             [0x17, 0x2B, 0x04, 0x7E, 0xBA, 0x77, 0xD6, 0x26, 0xE1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0C, 0x7D]]
 
-
+def print_state(state):
+    for i in range(0, len(state)):
+        print(hex(state[i][0]),hex(state[i][1]),hex(state[i][2]),hex(state[i][3]))
 
 #assumes 0 <= n <= 255
-def subBytes(n):
+def sub(n):
     return sbox[(n & 0xf0) >> 4][n & 0x0f]
+
+def subBytes(state):
+    print(state)
+    for i in range(0, len(state)):
+        for j in range(0, len(state[i])):
+            state[i][j] = sub(state[i][j])
+    print(state)
+
 
 #assumes 0 <= n <= 255
 def invSubBytes(n):
@@ -101,13 +111,132 @@ def mixColumns(state):
     print(state)
 
 
-def aes(state, key):
+def addRoundKey(state, subkey):
+    #print(state)
+    #print(subkey)
+    for i in range(0, len(state)):
+        for j in range(0, len(state[i])):
+            state[i][j] = state[i][j] ^ subkey[j][i]
+
+    #print(state)
+
+
+#--- key scheduler ---
+
+def subWord(word):
+    print(word)
+    for i in range(0, 4):
+        word[i] = sub(word[i])
+
+def rotWord(word):
+    shift(word)
+    
+
+def keyExpansion(main_key, nk): #-- nk = 4 for most stuff
+    temp = []
+    i = 0
+    rcon = [0x0, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36]
+    #keys = [[0,0,0,0]] * (4 * ((nk+6) + 1))
+    keys = []
+
+    #print(len(keys))
+
+    while i < nk:
+        keys.append([main_key[4*i], main_key[4*i + 1], main_key[4*i + 2], main_key[4*i + 3]])
+        i += 1
+
+    #for j in range(0, len(keys)):
+    #    for k in range(0, len(keys[j])):
+    #        print("key ", j, k, ":", hex(keys[j][k]))
+
+    
+    i = nk
+
+    while i < (4 * ((nk+6) + 1)):
+        #for j in range(0, len(keys[i-1])):
+        #    temp[j] = keys[i-1][j]
+
+        temp = keys[i-1].copy()
+
+        #temp = keys[i-1]
+        if (i % nk) == 0:
+            #temp = subWord(rotWord(temp)) ^ rcon[i//nk]
+            rotWord(temp)
+            subWord(temp)
+            temp[0] = temp[0] ^ rcon[i//nk]
+            #print("rcon[i//nk]:", rcon[i//nk])
+        elif (nk > 6 and i % nk == 4):
+            temp = subWord(temp)
+        else:
+            pass
+
+
+        #print("temp:", i)
+        #for j in range(0, len(temp)):
+        #    print(hex(temp[j]))
+
+
+        for j in range(0, len(temp)):
+            temp[j] = keys[i-4][j] ^ temp[j]
+
+        #print("new temp:", i)
+        #for k in range(0, len(temp)):
+        #    print(hex(temp[k]))
+
+        
+
+        keys.append(temp.copy())
+
+
+        #keys[i][j] = keys[i-4][j] ^ temp[j]
+        #print("keys i:", i, "j:", j, hex(keys[i-4][j] ^ temp[j]))
+        #print("keys[i][j]:", hex(keys[i][j]))
+
+        i += 1
+
+#------end while------------
+
+    #print("\n\nKEYS")
+    #for i in range(0, len(keys)):
+    #    for j in range(0, len(keys[i])): 
+    #        print(i, j, hex(keys[i][j]))
+
+    return keys
+
+
+
+
+def aes(state, keys):
+    nb = 4
+    nr = 10
+
+    print_state(state)
+    #print_state(keys[0:nb])
+
+    addRoundKey(state, keys[0:nb])
+
+
+    for i in range(1, nr):
+        subBytes(state)
+        shiftRows(state)
+        mixColumns(state)
+        addRoundKey(state, keys[i*nb: (i+1)*nb])
+
+    subBytes(state)
+    shiftRows(state)
+    addRoundKey(state, keys[nr*nb:(nr+1)*nb])
+    print()
+    print_state(state)
     return 0
 
 
 
+
+
+
+
 def make_state(b):
-    print(b)
+    #print(b)
 
 
     if len(b) == 16:
@@ -128,18 +257,53 @@ def make_state(b):
             except:
                 pass
 
-    print (state)
+    #print (state)
+    return state
 
 def get_bytes(filename):
+    plaintext = []
+
     f = open(filename, "rb")
 
     try:
         bytes_read = f.read(16)
         while bytes_read:
-            make_state(bytes_read)
+            plaintext.append(make_state(bytes_read))
             bytes_read = f.read(16)
     finally:
         f.close()
+
+    return plaintext
+
+def get_key(filename):
+    f = open(filename, "rb")
+
+    try:
+        bytes_read = f.read(16)
+        if len(bytes_read) < 16:
+            print("file not large enough!")
+            exit()
+    finally:
+        f.close()
+
+    #print(bytes_read)
+    return bytes_read
+
+
+def aes_ecb(plaintext_filename, key_filename, output_filename):
+    ptext = get_bytes(plaintext_filename)
+    key_bytes = get_key(key_filename)
+    keys = keyExpansion(key_bytes, 4)
+
+    #print(ptext)
+    #print(key_bytes)
+    #print(keys)
+
+    aes(ptext[0], keys)
+
+
+
+
 
 
 #---------------------------------------------------------
@@ -154,10 +318,28 @@ def get_bytes(filename):
 #
 #shiftRows(state)
 
-mixColumns([[219, 242, 1, 212],
-           [19, 10, 1, 212],
-           [83, 34, 1, 212],
-           [69, 92, 1, 213]])
+#mixColumns([[219, 242, 1, 212],
+#           [19, 10, 1, 212],
+#           [83, 34, 1, 212],
+#           [69, 92, 1, 213]])
+
+#addRoundKey([[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]], 
+#            [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]])
+
+#keyExpansion(bytes([0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c]), 4)
+
+#word = [1, 2, 3, 4]
+#print(word)
+#rotWord(word)
+#print(word)
+
+#get_bytes("message.txt")
+
+#get_key("keyfile.txt")
+aes_ecb("message2.txt", "keyfile.txt", "a")
+
+#aes([[121, 32, 104, 119], [111, 109, 101, 97], [117, 111, 114, 115], [114, 116, 32, 32]], [[97, 98, 99, 100], [101, 102, 103, 104], [105, 106, 107, 108], [109, 110, 111, 112], [255, 202, 50, 88], [154, 172, 85, 48], [243, 198, 62, 92], [158, 168, 81, 44], [63, 27, 67, 83], [165, 183, 22, 99], [86, 113, 40, 63], [200, 217, 121, 19], [14, 173, 62, 187], [171, 26, 40, 216], [253, 107, 0, 231], [53, 178, 121, 244], [49, 27, 129, 45], [154, 1, 169, 245], [103, 106, 169, 18], [82, 216, 208, 230], [64, 107, 15, 45], [218, 106, 166, 216], [189, 0, 15, 202], [239, 216, 223, 44], [1, 245, 126, 242], [219, 159, 216, 42], [102, 159, 215, 224], [137, 71, 8, 204], [225, 197, 53, 85], [58, 90, 237, 127], [92, 197, 58, 159], [213, 130, 50, 83], [114, 230, 216, 86], [72, 188, 53, 41], [20, 121, 15, 182], [193, 251, 61, 229], [102, 193, 1, 46], [46, 125, 52, 7], [58, 4, 59, 177], [251, 255, 6, 84], [70, 174, 33, 33], [104, 211, 21, 38], [82, 215, 46, 151], [169, 40, 40, 195]])
+
 
 
 
