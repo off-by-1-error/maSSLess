@@ -39,10 +39,18 @@ def print_state(state):
     for i in range(0, len(state)):
         print(hex(state[i][0]),hex(state[i][1]),hex(state[i][2]),hex(state[i][3]))
 
+
+
+
+#------ AES HELPER FUNCTIONS ------
+
+
 #assumes 0 <= n <= 255
 def sub(n):
-    return sbox[(n & 0xf0) >> 4][n & 0x0f]
+    return sbox[(n & 0xf0) >> 4][n & 0x0f]      #sbox[high bits][low bits]
 
+
+#substitute every byte in the state using the s-box
 def subBytes(state):
     for i in range(0, len(state)):
         for j in range(0, len(state[i])):
@@ -53,30 +61,33 @@ def subBytes(state):
 def invSub(n):
     return sbox_inv[(n & 0xf0) >> 4][n & 0x0f]
 
+
+
 def invSubBytes(state):
     for i in range(0, len(state)):
         for j in range(0, len(state[i])):
             state[i][j] = invSub(state[i][j])
 
 
+#does a left circular shift on the elements of row
+#ex. shift([0, 1, 2, 3]) -> [1, 2, 3, 0]
 def shift(row):
-    #print(row)
-    
     temp = row[0]
     for i in range(0, len(row) - 1):
         row[i] = row[i+1]
 
     row[len(row)-1] = temp
 
-    #print(row)
-        
 
+#applies the left circular shift n times, where n is the index of the row
 def shiftRows(state):
     for i in range(0, len(state)):
         for j in range(0, i):
             shift(state[i])
 
 
+#does a right circular shift on the elements of row
+#ex. shift([0, 1, 2, 3]) -> [3, 0, 1, 2]
 def invShift(row):
     temp = row[len(row)-1]
     for i in range(len(row)-1, 0, -1):
@@ -85,28 +96,27 @@ def invShift(row):
     row[0] = temp
 
 
+#applies the right circular shift n times, where n is the index of the row
 def invShiftRows(state):
     for i in range(0, len(state)):
         for j in range(0, i):
             invShift(state[i])
     
 
- 
 
-
-# learned from http://cs.ucsb.edu/~koc/cs178/projects/JT/aes.c
+#mixColumns multiplies each column of the state [b3, b2, b1, b0], represented as
+#b3*x^3 + b2*x^2 + b1*x + b0, by the constant polynomial 3x^3 + x^2 + x + 2 modulo x^4 + 1.
+#all these polynomials have coefficients in GF(2^8)
 xtime = lambda a: (((a << 1) ^ 0x1B) & 0xFF) if (a & 0x80) else (a << 1)
 
+def mix(col):
 
-def mix(a):
-    # see Sec 4.1.2 in The Design of Rijndael
-
-    t = a[0] ^ a[1] ^ a[2] ^ a[3]
-    u = a[0]
-    a[0] ^= t ^ xtime(a[0] ^ a[1])
-    a[1] ^= t ^ xtime(a[1] ^ a[2])
-    a[2] ^= t ^ xtime(a[2] ^ a[3])
-    a[3] ^= t ^ xtime(a[3] ^ u)
+    t = col[0] ^ col[1] ^ col[2] ^ col[3]
+    u = col[0]
+    col[0] ^= t ^ xtime(col[0] ^ col[1])
+    col[1] ^= t ^ xtime(col[1] ^ col[2])
+    col[2] ^= t ^ xtime(col[2] ^ col[3])
+    col[3] ^= t ^ xtime(col[3] ^ u)
 
 
 
@@ -120,8 +130,10 @@ def mixColumns(state):
         state[2][i] = col[2]
         state[3][i] = col[3]
 
+
+#sets up the inverse polynomial in the state, so that when mixColumns is called again, the
+#original polynomial is obtained
 def invMixColumns(state):
-    # see Sec 4.1.3 in The Design of Rijndael
     for i in range(4):
         u = xtime(xtime(state[0][i] ^ state[2][i]))
         v = xtime(xtime(state[1][i] ^ state[3][i]))
@@ -134,107 +146,71 @@ def invMixColumns(state):
 
 
 
+#XORs each byte of the state with each corresponding byte of the subkey
 def addRoundKey(state, subkey):
-    #print(state)
-    #print(subkey)
     for i in range(0, len(state)):
         for j in range(0, len(state[i])):
             state[i][j] = state[i][j] ^ subkey[j][i]
 
-    #print(state)
 
+#------ KEY SCHEDULER ------
 
-#--- key scheduler ---
-
+#puts each byte in the given word through the s-box
 def subWord(word):
-    #print(word)
     for i in range(0, 4):
         word[i] = sub(word[i])
 
+
+#does a left circular shift on the bytes in the word
 def rotWord(word):
     shift(word)
     
 
-def keyExpansion(main_key, nk): #-- nk = 4 for most stuff
+#based directly on the pseudocode from FIPS-197 section 5.2
+def keyExpansion(main_key, nk): #-- TODO: verify correctness for nk != 4
     temp = []
     i = 0
     rcon = [0x0, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36]
-    #keys = [[0,0,0,0]] * (4 * ((nk+6) + 1))
     keys = []
-
-    #print(len(keys))
 
     while i < nk:
         keys.append([main_key[4*i], main_key[4*i + 1], main_key[4*i + 2], main_key[4*i + 3]])
         i += 1
-
-    #for j in range(0, len(keys)):
-    #    for k in range(0, len(keys[j])):
-    #        print("key ", j, k, ":", hex(keys[j][k]))
-
     
     i = nk
 
     while i < (4 * ((nk+6) + 1)):
-        #for j in range(0, len(keys[i-1])):
-        #    temp[j] = keys[i-1][j]
-
         temp = keys[i-1].copy()
 
-        #temp = keys[i-1]
         if (i % nk) == 0:
-            #temp = subWord(rotWord(temp)) ^ rcon[i//nk]
             rotWord(temp)
             subWord(temp)
             temp[0] = temp[0] ^ rcon[i//nk]
-            #print("rcon[i//nk]:", rcon[i//nk])
         elif (nk > 6 and i % nk == 4):
             temp = subWord(temp)
         else:
             pass
 
-
-        #print("temp:", i)
-        #for j in range(0, len(temp)):
-        #    print(hex(temp[j]))
-
-
         for j in range(0, len(temp)):
             temp[j] = keys[i-4][j] ^ temp[j]
 
-        #print("new temp:", i)
-        #for k in range(0, len(temp)):
-        #    print(hex(temp[k]))
-
-        
-
         keys.append(temp.copy())
 
-
-        #keys[i][j] = keys[i-4][j] ^ temp[j]
-        #print("keys i:", i, "j:", j, hex(keys[i-4][j] ^ temp[j]))
-        #print("keys[i][j]:", hex(keys[i][j]))
-
         i += 1
-
-#------end while------------
-
-    #print("\n\nKEYS")
-    #for i in range(0, len(keys)):
-    #    for j in range(0, len(keys[i])): 
-    #        print(i, j, hex(keys[i][j]))
 
     return keys
 
 
 
+#---------------    CIPHERS    ---------------
 
+#based on FIPS-197 section 5.1
+#this encrypts a single 16-byte block of data
+#state is assumed to be a 4x4 array of bytes, keys is 44x4 array of bytes
 def aes(state, keys):
     nb = 4
     nr = 10
 
-    print_state(state)
-    #print_state(keys[0:nb])
 
     addRoundKey(state, keys[0:nb])
 
@@ -248,19 +224,15 @@ def aes(state, keys):
     subBytes(state)
     shiftRows(state)
     addRoundKey(state, keys[nr*nb:(nr+1)*nb])
-    print()
-    print_state(state)
-    print()
     return 0
 
 
-
+#based on FIPS-197 section 5.3
+#this decrypts a single 16-byte block of data
+#parameters are the same as in aes()
 def invAes(state, keys):
     nb = 4
     nr = 10
-
-    print_state(state)
-    print()
 
     addRoundKey(state, keys[nr*nb:(nr+1)*nb])
 
@@ -274,18 +246,14 @@ def invAes(state, keys):
     invSubBytes(state)
     addRoundKey(state, keys[0:nb])
 
-    print_state(state)
-    print()
+
+#------------ FILE I/O ------------ 
 
 
 
 
-
-
-
+#takes an array of bytes of unknown size b, and formats it into the state array
 def make_state(b):
-    #print(b)
-
 
     if len(b) == 16:
         state = [[b[0], b[4], b[8], b[12]],
@@ -299,14 +267,17 @@ def make_state(b):
                  [0, 0, 0, 0],
                  [0, 0, 0, 0]]
 
+
+        #handles the case where b does not contain 16 bytes
         for i in range(0, 15):
             try:
                 state[i//4][i%4] = b[(i*4)%15]
             except:
                 pass
 
-    #print (state)
     return state
+
+
 
 def get_bytes(filename):
     plaintext = []
@@ -337,9 +308,22 @@ def get_key(filename):
     #print(bytes_read)
     return bytes_read
 
+def write_to_output(filename, text):
+    f = open(filename, "wb")
 
-def aes_ecb(plaintext_filename, key_filename, output_filename):
-    ptext = get_bytes(plaintext_filename)
+    for i in range(0, len(text)):
+        for j in range(0, len(text[i])):
+            for k in range(0, len(text[i][j])):
+                if i == len(text)-1 and text[i][k][j] == 0:
+                    pass
+                else:
+                    f.write(bytes([text[i][k][j]]))
+
+    f.close()
+
+
+def aes_ecb(plaintext_filename, key_filename, output_filename, n):
+    input_text = get_bytes(plaintext_filename)
     key_bytes = get_key(key_filename)
     keys = keyExpansion(key_bytes, 4)
 
@@ -347,12 +331,15 @@ def aes_ecb(plaintext_filename, key_filename, output_filename):
     #print(key_bytes)
     #print(keys)
 
-    #for i in range(0, len(ptext)):
-    aes(ptext[0], keys)
+    if n == 0:
+        for i in range(0, len(input_text)):
+            aes(input_text[i], keys)
 
-    invAes(ptext[0], keys)
+    if n == 1:
+        for i in range(0, len(input_text)):
+            invAes(input_text[i], keys)
 
-
+    write_to_output(output_filename, input_text)
 
 
 
@@ -363,7 +350,8 @@ def aes_ecb(plaintext_filename, key_filename, output_filename):
 #---------------------------------------------------------
 
 
-aes_ecb("message.txt", "keyfile.txt", "a")
+aes_ecb("kirby.jpg", "keyfile.txt", "ctext.jpg", 0)
+aes_ecb("ctext.jpg", "keyfile.txt", "ptext.jpg", 1)
 
 
 #s = [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15]]
