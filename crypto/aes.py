@@ -44,16 +44,19 @@ def sub(n):
     return sbox[(n & 0xf0) >> 4][n & 0x0f]
 
 def subBytes(state):
-    print(state)
     for i in range(0, len(state)):
         for j in range(0, len(state[i])):
             state[i][j] = sub(state[i][j])
-    print(state)
 
 
 #assumes 0 <= n <= 255
-def invSubBytes(n):
+def invSub(n):
     return sbox_inv[(n & 0xf0) >> 4][n & 0x0f]
+
+def invSubBytes(state):
+    for i in range(0, len(state)):
+        for j in range(0, len(state[i])):
+            state[i][j] = invSub(state[i][j])
 
 
 def shift(row):
@@ -69,13 +72,25 @@ def shift(row):
         
 
 def shiftRows(state):
-    print(state)
-
     for i in range(0, len(state)):
         for j in range(0, i):
             shift(state[i])
 
-    print(state)
+
+def invShift(row):
+    temp = row[len(row)-1]
+    for i in range(len(row)-1, 0, -1):
+        row[i] = row[i-1]
+
+    row[0] = temp
+
+
+def invShiftRows(state):
+    for i in range(0, len(state)):
+        for j in range(0, i):
+            invShift(state[i])
+    
+
  
 
 
@@ -85,7 +100,6 @@ xtime = lambda a: (((a << 1) ^ 0x1B) & 0xFF) if (a & 0x80) else (a << 1)
 
 def mix(a):
     # see Sec 4.1.2 in The Design of Rijndael
-    print(a)
 
     t = a[0] ^ a[1] ^ a[2] ^ a[3]
     u = a[0]
@@ -94,11 +108,9 @@ def mix(a):
     a[2] ^= t ^ xtime(a[2] ^ a[3])
     a[3] ^= t ^ xtime(a[3] ^ u)
 
-    print(a)
 
 
 def mixColumns(state):
-    print(state)
     
     for i in range(0, 4):
         col = [state[0][i], state[1][i], state[2][i], state[3][i]]
@@ -108,7 +120,18 @@ def mixColumns(state):
         state[2][i] = col[2]
         state[3][i] = col[3]
 
-    print(state)
+def invMixColumns(state):
+    # see Sec 4.1.3 in The Design of Rijndael
+    for i in range(4):
+        u = xtime(xtime(state[0][i] ^ state[2][i]))
+        v = xtime(xtime(state[1][i] ^ state[3][i]))
+        state[0][i] ^= u
+        state[1][i] ^= v
+        state[2][i] ^= u
+        state[3][i] ^= v
+
+    mixColumns(state)
+
 
 
 def addRoundKey(state, subkey):
@@ -124,7 +147,7 @@ def addRoundKey(state, subkey):
 #--- key scheduler ---
 
 def subWord(word):
-    print(word)
+    #print(word)
     for i in range(0, 4):
         word[i] = sub(word[i])
 
@@ -227,7 +250,32 @@ def aes(state, keys):
     addRoundKey(state, keys[nr*nb:(nr+1)*nb])
     print()
     print_state(state)
+    print()
     return 0
+
+
+
+def invAes(state, keys):
+    nb = 4
+    nr = 10
+
+    print_state(state)
+    print()
+
+    addRoundKey(state, keys[nr*nb:(nr+1)*nb])
+
+    for i in range(nr-1, 0, -1):
+        invShiftRows(state)
+        invSubBytes(state)
+        addRoundKey(state, keys[i*nb: (i+1)*nb])
+        invMixColumns(state)
+
+    invShiftRows(state)
+    invSubBytes(state)
+    addRoundKey(state, keys[0:nb])
+
+    print_state(state)
+    print()
 
 
 
@@ -299,7 +347,13 @@ def aes_ecb(plaintext_filename, key_filename, output_filename):
     #print(key_bytes)
     #print(keys)
 
+    #for i in range(0, len(ptext)):
     aes(ptext[0], keys)
+
+    invAes(ptext[0], keys)
+
+
+
 
 
 
@@ -309,34 +363,47 @@ def aes_ecb(plaintext_filename, key_filename, output_filename):
 #---------------------------------------------------------
 
 
-#get_bytes("message.txt")
-#state = [[1, 2, 3, 4],
-#         [1, 2, 3, 4],
-#         [1, 2, 3, 4],
-#         [1, 2, 3, 4]]
-#
-#
-#shiftRows(state)
+aes_ecb("message.txt", "keyfile.txt", "a")
 
-#mixColumns([[219, 242, 1, 212],
-#           [19, 10, 1, 212],
-#           [83, 34, 1, 212],
-#           [69, 92, 1, 213]])
 
-#addRoundKey([[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]], 
-#            [[1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 3, 3], [4, 4, 4, 4]])
+#s = [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15]]
+#print_state(s)
+#mixColumns(s)
+#print()
+#print_state(s)
+#print()
+#invMixColumns(s)
+#print_state(s)
 
-#keyExpansion(bytes([0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c]), 4)
 
-#word = [1, 2, 3, 4]
-#print(word)
-#rotWord(word)
-#print(word)
 
-#get_bytes("message.txt")
 
-#get_key("keyfile.txt")
-aes_ecb("message2.txt", "keyfile.txt", "a")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #aes([[121, 32, 104, 119], [111, 109, 101, 97], [117, 111, 114, 115], [114, 116, 32, 32]], [[97, 98, 99, 100], [101, 102, 103, 104], [105, 106, 107, 108], [109, 110, 111, 112], [255, 202, 50, 88], [154, 172, 85, 48], [243, 198, 62, 92], [158, 168, 81, 44], [63, 27, 67, 83], [165, 183, 22, 99], [86, 113, 40, 63], [200, 217, 121, 19], [14, 173, 62, 187], [171, 26, 40, 216], [253, 107, 0, 231], [53, 178, 121, 244], [49, 27, 129, 45], [154, 1, 169, 245], [103, 106, 169, 18], [82, 216, 208, 230], [64, 107, 15, 45], [218, 106, 166, 216], [189, 0, 15, 202], [239, 216, 223, 44], [1, 245, 126, 242], [219, 159, 216, 42], [102, 159, 215, 224], [137, 71, 8, 204], [225, 197, 53, 85], [58, 90, 237, 127], [92, 197, 58, 159], [213, 130, 50, 83], [114, 230, 216, 86], [72, 188, 53, 41], [20, 121, 15, 182], [193, 251, 61, 229], [102, 193, 1, 46], [46, 125, 52, 7], [58, 4, 59, 177], [251, 255, 6, 84], [70, 174, 33, 33], [104, 211, 21, 38], [82, 215, 46, 151], [169, 40, 40, 195]])
 
