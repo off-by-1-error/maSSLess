@@ -1,4 +1,6 @@
 import sys
+import secrets
+import copy
 
 sbox = [[0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76],
         [0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0],
@@ -278,7 +280,7 @@ def make_state(b):
     return state
 
 
-
+#reads plaintext bytes from file
 def get_bytes(filename):
     plaintext = []
 
@@ -294,6 +296,8 @@ def get_bytes(filename):
 
     return plaintext
 
+
+#reads bytes from keyfile
 def get_key(filename):
     f = open(filename, "rb")
 
@@ -308,6 +312,8 @@ def get_key(filename):
     #print(bytes_read)
     return bytes_read
 
+
+#writes the text, formatted as an array of 4x4 states, to the output file
 def write_to_output(filename, text):
     f = open(filename, "wb")
 
@@ -322,6 +328,16 @@ def write_to_output(filename, text):
     f.close()
 
 
+def get_iv(iv):
+    for i in range(0, 4):
+        temp = [0] * 4
+
+        for i in range(0, len(temp)):
+            temp[i] = secrets.randbits(8)
+
+        iv.append(temp)
+
+#---------- DON'T USE THIS!!! ---------------------------
 def aes_ecb(plaintext_filename, key_filename, output_filename, n):
     input_text = get_bytes(plaintext_filename)
     key_bytes = get_key(key_filename)
@@ -342,6 +358,48 @@ def aes_ecb(plaintext_filename, key_filename, output_filename, n):
     write_to_output(output_filename, input_text)
 
 
+def aes_cbc(plaintext_filename, key_filename, output_filename, n):
+    iv = []
+    get_iv(iv)
+
+    input_text = get_bytes(plaintext_filename)
+    key_bytes = get_key(key_filename)
+    keys = keyExpansion(key_bytes, 4)
+
+    if n == 0:
+        addRoundKey(input_text[0], iv)
+        aes(input_text[0], keys)
+
+        for i in range(1, len(input_text)):
+            addRoundKey(input_text[i], input_text[i-1])
+            aes(input_text[i], keys)
+
+
+        input_text = [iv] + input_text
+
+
+        write_to_output(output_filename, input_text)
+
+    if n == 1:
+
+        last_block = copy.deepcopy(input_text[0])
+
+        for i in range(1, len(input_text)):
+            current_block = copy.deepcopy(input_text[i])
+
+            invAes(input_text[i], keys)
+            addRoundKey(input_text[i], last_block)
+
+            last_block = copy.deepcopy(current_block)
+
+        write_to_output(output_filename, input_text[1:])
+            
+        
+       
+        
+        
+
+
 
 
 
@@ -350,8 +408,10 @@ def aes_ecb(plaintext_filename, key_filename, output_filename, n):
 #---------------------------------------------------------
 
 
-aes_ecb("kirby.jpg", "keyfile.txt", "ctext.jpg", 0)
-aes_ecb("ctext.jpg", "keyfile.txt", "ptext.jpg", 1)
+aes_cbc("kirby.jpg", "keyfile.txt", "ctext.txt", 0)
+aes_cbc("ctext.txt", "keyfile.txt", "ptext.txt", 1)
+#aes_ecb("kirby.jpg", "keyfile.txt", "ctext.jpg", 0)
+#aes_ecb("ctext.jpg", "keyfile.txt", "ptext.jpg", 1)
 
 
 #s = [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15]]
