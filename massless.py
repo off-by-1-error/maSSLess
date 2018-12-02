@@ -1,6 +1,6 @@
 from enum import Enum
 from util import *
-from crypto import aes, rsa
+from crypto import rsa
 import asn1, base64
 
 DEF_VERSION = (3,3)

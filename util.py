@@ -1,4 +1,5 @@
 import struct, time, secrets
+from crypto import sha1, sha256
 
 def p64(*args):
     return b"".join(struct.pack("!Q", x) for x in args)
@@ -65,12 +66,10 @@ def computeHmac(k, m, blocksize, h):
     return outer
 
 def compute_sha256(m):
-    import hashlib #TODO: sha256
-    return hashlib.sha256(m).digest()
+    return sha256.sha256(m)
 def hmac_sha256(k, m):
     return computeHmac(k, m, 64, compute_sha256)
 def compute_sha1(m):
-    import hashlib #TODO: sha1
-    return hashlib.sha1(m).digest()
+    return sha1.sha1(m)
 def hmac_sha1(k, m):
     return computeHmac(k, m, 64, compute_sha1)
