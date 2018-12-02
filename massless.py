@@ -1,6 +1,6 @@
 from enum import Enum
 from util import *
-from crypto import rsa
+from crypto import rsa, sha256
 import asn1, base64
 
 DEF_VERSION = (3,3)
@@ -126,7 +126,6 @@ class SSLState():
         return out[:nbytes]
 
     def encryptData(self, typ, version, data):
-        from hashlib import sha1 #TODO implement sha...
         macced = p64(self.m_seq)+p8(typ.value)+version+p16(len(data))+data
         self.m_seq += 1
         pl = data
@@ -347,9 +346,8 @@ class SSLState():
         if u24(msg[1:4]) != len(msg)-4:
             raise Exception("length mismatch for Finished message")
         peer_verify = msg[4:]
-        from hashlib import sha256 #TODO implement sha
         lbl = b"client finished" if self.end == "server" else b"server finished"
-        verify = self.prf(self.master, lbl, sha256(self.handshake_messages).digest(), 12)
+        verify = self.prf(self.master, lbl, sha256.sha256(self.handshake_messages), 12)
         if verify != peer_verify:
             raise Exception("verification of Finished message failed")
         if self.end == "server":
