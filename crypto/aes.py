@@ -1,6 +1,7 @@
 import sys
 import secrets
 import copy
+from util import *
 
 sbox = [[0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76],
         [0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0],
@@ -333,7 +334,7 @@ def get_iv(iv):
         temp = [0] * 4
 
         for i in range(0, len(temp)):
-            temp[i] = secrets.randbits(8)
+            temp[i] = bytes("5", "utf8")[0] #secrets.randbits(8)
 
         iv.append(temp)
 
@@ -343,9 +344,6 @@ def aes_ecb(plaintext_filename, key_filename, output_filename, n):
     key_bytes = get_key(key_filename)
     keys = keyExpansion(key_bytes, 4)
 
-    #print(ptext)
-    #print(key_bytes)
-    #print(keys)
 
     if n == 0:
         for i in range(0, len(input_text)):
@@ -399,18 +397,28 @@ def flatten(states):
     for i in range(0, len(states)):
         for j in range(0, len(states[i])):
             for k in range(0, len(states[i][j])):
-                if i == len(states)-1 and states[i][k][j] == 0:
-                    pass
-                else:
-                    result.append(states[i][k][j])
+                #if i == len(states)-1 and states[i][k][j] == 0:
+                #    pass
+                #else:
+                result.append(states[i][k][j])
 
     return result
 
-      
+def ark(state, subkey):
+    for i in range(0, len(state)):
+        for j in range(0, len(state[i])):
+            state[i][j] = state[i][j] ^ subkey[i][j]
+
+def format_iv(iv):
+    f = [[iv[0], iv[4], iv[8], iv[12]],
+         [iv[1], iv[5], iv[9], iv[13]],
+         [iv[2], iv[6], iv[10], iv[14]],
+         [iv[3], iv[7], iv[11], iv[15]]]
+
+    return f
         
-def aes_cbc_encrypt(key, data):
-    iv = []
-    get_iv(iv)
+def aes_cbc_encrypt(key, data, iv_):
+    iv = format_iv(iv_)
     temp = copy.deepcopy(data)
     states = []
     keys = keyExpansion(key, 4)
@@ -419,20 +427,18 @@ def aes_cbc_encrypt(key, data):
         states.append(make_state(temp[:16]))
         temp = temp[16:]
         
-    addRoundKey(states[0], iv)
+    ark(states[0], iv) 
     aes(states[0], keys)
 
     for i in range(1, len(states)):
-        addRoundKey(states[i], states[i-1])
+        ark(states[i], states[i-1])
         aes(states[i], keys)
-
-    states = [iv] + states
 
     s = bytes(flatten(states))
 
     return s
 
-def aes_cbc_decrypt(key, data):
+def aes_cbc_decrypt(key, data, iv):
     temp = copy.deepcopy(data)
     states = []
     keys = keyExpansion(key, 4)
@@ -441,19 +447,18 @@ def aes_cbc_decrypt(key, data):
         states.append(make_state(temp[:16]))
         temp = temp[16:]
 
-    last_block = copy.deepcopy(states[0])
-    for i in range(1, len(states)):
+    last_block = format_iv(iv) #copy.deepcopy(states[0])
+
+    for i in range(0, len(states)):
         current_block = copy.deepcopy(states[i])
         invAes(states[i], keys)
-        addRoundKey(states[i], last_block)
+        ark(states[i], last_block)
         last_block = copy.deepcopy(current_block)
 
-    s = bytes(flatten(states[1:]))
+    s = bytes(flatten(states))
+    #s = s + bytes([0])
 
     return s
     
-
-
-
 
 
