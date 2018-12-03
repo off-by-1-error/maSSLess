@@ -132,26 +132,16 @@ class SSLState():
         pl += hmac_sha1(self.m_mac_key, macced)
         plen = 16 - (len(pl) % 16)
         pl += p8(plen-1)*plen
-        #from Crypto.Cipher import AES #TODO: insert our aes
         iv = getRandomBytes(16)
-        #aes = AES.new(self.m_key, AES.MODE_CBC, iv)
-        #enc = aes.encrypt(pl)
-        #enc = iv + enc
-
         enc = aes.aes_cbc_encrypt(self.m_key, pl, iv)
         enc = iv + enc
         return enc
     def decryptData(self, enc):
         iv = enc[:16]
         enc = enc[16:]
-        #from Crypto.Cipher import AES #TODO: insert our aes
-        #aes = AES.new(self.peer_key, AES.MODE_CBC, iv)
-        #msg = aes.decrypt(enc)
-
         msg = aes.aes_cbc_decrypt(self.peer_key, enc, iv)
         return msg
     def verifyMsg(self, typ, version, msg):
-        # TODO: this just doesnt work.... mac not correct
         padlen = u8(bytes([msg[-1]]))
         if msg[-padlen-1:-1] != bytes([padlen])*padlen:
             raise Exception("bad padding") #TODO: make sure this cant cause padding oracle attack
@@ -381,12 +371,8 @@ class SSLState():
         self.premaster = rsa.rsa_pkcs1_v15_decrypt(enc, self.serv_rsa_privkey)
 
     def sendFinished(self):
-        #TODO
-        # need to send prf(master, "client/server finished", H(handshake_messages))
-        # ... need sha256 for prf
-        from hashlib import sha256 #TODO implement sha
         lbl = b"client finished" if self.end == "client" else b"server finished"
-        verify = self.prf(self.master, lbl, sha256(self.handshake_messages).digest(), 12)
+        verify = self.prf(self.master, lbl, sha256.sha256(self.handshake_messages), 12)
         content = self.buildRawHandshake(HandshakeType.FIN, verify)
         if self.end == "client":
             self.handshake_messages += content
