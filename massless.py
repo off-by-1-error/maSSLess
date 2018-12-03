@@ -133,18 +133,21 @@ class SSLState():
         pl += hmac_sha1(self.m_mac_key, macced)
         plen = 16 - (len(pl) % 16)
         pl += p8(plen-1)*plen
-        from Crypto.Cipher import AES #TODO: insert our aes
-        iv = getRandomBytes(16)
-        aes = AES.new(self.m_key, AES.MODE_CBC, iv)
-        enc = aes.encrypt(pl)
-        enc = iv + enc
+        #from Crypto.Cipher import AES #TODO: insert our aes
+        #iv = getRandomBytes(16)
+        #aes = AES.new(self.m_key, AES.MODE_CBC, iv)
+        #enc = aes.encrypt(pl)
+        #enc = iv + enc
+
+        enc = aes_cbc_encrypt(self.m_key, pl)
         return enc
     def decryptData(self, enc):
-        iv = enc[:16]
-        enc = enc[16:]
-        from Crypto.Cipher import AES #TODO: insert our aes
-        aes = AES.new(self.peer_key, AES.MODE_CBC, iv)
-        msg = aes.decrypt(enc)
+        #iv = enc[:16]
+        #enc = enc[16:]
+        #from Crypto.Cipher import AES #TODO: insert our aes
+        #aes = AES.new(self.peer_key, AES.MODE_CBC, iv)
+        #msg = aes.decrypt(enc)
+        aes_cbc_decrypt(self.peer_key, enc)
         return msg
     def verifyMsg(self, typ, version, msg):
         # TODO: this just doesnt work.... mac not correct

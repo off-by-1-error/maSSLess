@@ -394,68 +394,64 @@ def aes_cbc(plaintext_filename, key_filename, output_filename, n):
 
         write_to_output(output_filename, input_text[1:])
             
+def flatten(states):
+    result = []
+    for i in range(0, len(states)):
+        for j in range(0, len(states[i])):
+            for k in range(0, len(states[i][j])):
+                if i == len(states)-1 and states[i][k][j] == 0:
+                    pass
+                else:
+                    result.append(states[i][k][j])
+
+    return result
+
+      
         
-       
+def aes_cbc_encrypt(key, data):
+    iv = []
+    get_iv(iv)
+    temp = copy.deepcopy(data)
+    states = []
+    keys = keyExpansion(key, 4)
+
+    while len(temp) > 0:
+        states.append(make_state(temp[:16]))
+        temp = temp[16:]
         
-        
+    addRoundKey(states[0], iv)
+    aes(states[0], keys)
 
+    for i in range(1, len(states)):
+        addRoundKey(states[i], states[i-1])
+        aes(states[i], keys)
 
+    states = [iv] + states
 
+    s = bytes(flatten(states))
 
+    return s
 
+def aes_cbc_decrypt(key, data):
+    temp = copy.deepcopy(data)
+    states = []
+    keys = keyExpansion(key, 4)
 
+    while len(temp) > 0:
+        states.append(make_state(temp[:16]))
+        temp = temp[16:]
 
-#---------------------------------------------------------
+    last_block = copy.deepcopy(states[0])
+    for i in range(1, len(states)):
+        current_block = copy.deepcopy(states[i])
+        invAes(states[i], keys)
+        addRoundKey(states[i], last_block)
+        last_block = copy.deepcopy(current_block)
 
+    s = bytes(flatten(states[1:]))
 
-aes_cbc("kirby.jpg", "keyfile.txt", "ctext.txt", 0)
-aes_cbc("ctext.txt", "keyfile.txt", "ptext.txt", 1)
-#aes_ecb("kirby.jpg", "keyfile.txt", "ctext.jpg", 0)
-#aes_ecb("ctext.jpg", "keyfile.txt", "ptext.jpg", 1)
-
-
-#s = [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15]]
-#print_state(s)
-#mixColumns(s)
-#print()
-#print_state(s)
-#print()
-#invMixColumns(s)
-#print_state(s)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#aes([[121, 32, 104, 119], [111, 109, 101, 97], [117, 111, 114, 115], [114, 116, 32, 32]], [[97, 98, 99, 100], [101, 102, 103, 104], [105, 106, 107, 108], [109, 110, 111, 112], [255, 202, 50, 88], [154, 172, 85, 48], [243, 198, 62, 92], [158, 168, 81, 44], [63, 27, 67, 83], [165, 183, 22, 99], [86, 113, 40, 63], [200, 217, 121, 19], [14, 173, 62, 187], [171, 26, 40, 216], [253, 107, 0, 231], [53, 178, 121, 244], [49, 27, 129, 45], [154, 1, 169, 245], [103, 106, 169, 18], [82, 216, 208, 230], [64, 107, 15, 45], [218, 106, 166, 216], [189, 0, 15, 202], [239, 216, 223, 44], [1, 245, 126, 242], [219, 159, 216, 42], [102, 159, 215, 224], [137, 71, 8, 204], [225, 197, 53, 85], [58, 90, 237, 127], [92, 197, 58, 159], [213, 130, 50, 83], [114, 230, 216, 86], [72, 188, 53, 41], [20, 121, 15, 182], [193, 251, 61, 229], [102, 193, 1, 46], [46, 125, 52, 7], [58, 4, 59, 177], [251, 255, 6, 84], [70, 174, 33, 33], [104, 211, 21, 38], [82, 215, 46, 151], [169, 40, 40, 195]])
-
-
+    return s
+    
 
 
 
